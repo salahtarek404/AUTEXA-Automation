@@ -1,0 +1,69 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Autexa Chat Widget Demo</title>
+    <style>
+        body { font-family: sans-serif; background: #f0f2f5; padding: 2rem; }
+        .chat-container { width: 350px; background: white; border-radius: 12px; box-shadow: 0 4px 12px rgba(0,0,0,0.1); display: flex; flex-direction: column; overflow: hidden; margin: 0 auto; height: 500px;}
+        .chat-header { background: #25D366; color: white; padding: 1rem; font-weight: bold; text-align: center; } /* Using a Whatsapp-like green, but generic for Phase 1 */
+        .messages { padding: 1rem; flex-grow: 1; overflow-y: auto; display: flex; flex-direction: column; gap: 8px; }
+        .msg { padding: 8px 12px; border-radius: 12px; max-width: 80%; font-size: 0.95rem;}
+        .msg.user { background: #DCF8C6; align-self: flex-end; }
+        .msg.bot { background: #f1f3f4; align-self: flex-start; }
+        .input-area { display: flex; border-top: 1px solid #ddd; }
+        input { flex: 1; padding: 12px; border: none; outline: none; font-size: 1rem;}
+        button { background: #25D366; color: white; border: none; padding: 12px 16px; cursor: pointer; font-weight: bold; }
+        button:hover { background: #128C7E; }
+    </style>
+</head>
+<body>
+    <div class="chat-container">
+        <div class="chat-header">Autexa AI Assistant</div>
+        <div class="messages" id="msgs">
+            <div class="msg bot">Hi there! How can I help you?</div>
+        </div>
+        <div class="input-area">
+            <input type="text" id="userInput" placeholder="Type a message..." onkeypress="if(event.key === 'Enter') sendMessage()">
+            <button onclick="sendMessage()">Send</button>
+        </div>
+    </div>
+
+    <script>
+        // Generate a random session ID for this browser tab
+        const sessionId = "web_" + Math.random().toString(36).substring(2, 10);
+        
+        function addMessage(text, sender) {
+            const msgs = document.getElementById('msgs');
+            const el = document.createElement('div');
+            el.className = 'msg ' + sender;
+            el.innerText = text;
+            msgs.appendChild(el);
+            msgs.scrollTop = msgs.scrollHeight;
+        }
+
+        async function sendMessage() {
+            const input = document.getElementById('userInput');
+            const text = input.value.trim();
+            if(!text) return;
+            
+            addMessage(text, 'user');
+            input.value = '';
+
+            try {
+                // Assuming channels-service is running on 8001
+                const res = await fetch('/webhook/widget', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ sender_id: sessionId, message: text })
+                });
+                const data = await res.json();
+                addMessage(data.reply, 'bot');
+            } catch(e) {
+                addMessage('Connection error: could not reach agent.', 'bot');
+            }
+        }
+    </script>
+</body>
+</html>
