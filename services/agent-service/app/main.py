@@ -7,9 +7,16 @@ from app.db.session import engine, get_db, Base
 from app.models.conversation import Conversation
 from app.models.lead import Lead
 from app.schemas.chat import ChatRequest, ChatResponse
-from app.agent.llm_client import llm_client
+from app.agent.orchestrator import orchestrator
 
 # For MVP Phase 1, create tables automatically
+from sqlalchemy import text
+with engine.connect() as conn:
+    try:
+        conn.execute(text("CREATE EXTENSION IF NOT EXISTS vector"))
+        conn.commit()
+    except Exception as e:
+        print(f"Could not create vector extension: {e}")
 Base.metadata.create_all(bind=engine)
 
 app = FastAPI(title=settings.PROJECT_NAME)
@@ -53,7 +60,7 @@ def chat_endpoint(request: ChatRequest, db: Session = Depends(get_db)):
     conversation.messages = updated_messages
 
     # Generate reply
-    bot_reply = llm_client.generate_reply(conversation.messages)
+    bot_reply = orchestrator.generate_reply(db, lead, conversation.messages)
     
     # Append bot reply
     bot_msg = {"role": "assistant", "content": bot_reply}
