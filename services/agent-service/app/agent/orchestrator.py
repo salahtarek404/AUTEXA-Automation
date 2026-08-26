@@ -1,8 +1,7 @@
-import os
 import json
 from sqlalchemy.orm import Session
-import google.generativeai as genai
-import google.generativeai.protos as genai_protos
+from google import genai
+from google.genai import types
 from app.core.config import settings
 from app.models.tool_call_log import ToolCallLog
 from app.models.lead import Lead
@@ -20,107 +19,70 @@ Rules:
 6. If you cannot find the answer in the retrieved documents, politely explain that you don't have that information and ask for their email/phone so a human can follow up.
 """
 
-# Manual tool declarations for Gemini Function Calling
-DB_SEARCH_SERVICES_TOOL = {
-    "function_declarations": [
-        {
-            "name": "search_services",
-            "description": "Queries the knowledge base for details about Autexa's services, packages, pricing, subscription options, and FAQs. Frame pricing as rough estimates.",
-            "parameters": {
-                "type": "OBJECT",
-                "properties": {
-                    "query": {
-                        "type": "STRING",
-                        "description": "The search term or query relating to services, packages, pricing, and FAQs."
-                    }
+TOOLS = [
+    types.Tool(function_declarations=[
+        types.FunctionDeclaration(
+            name="search_services",
+            description="Queries the knowledge base for details about Autexa's services, packages, pricing, subscription options, and FAQs. Frame pricing as rough estimates.",
+            parameters=types.Schema(
+                type=types.Type.OBJECT,
+                properties={
+                    "query": types.Schema(type=types.Type.STRING, description="The search term or query relating to services, packages, pricing, and FAQs.")
                 },
-                "required": ["query"]
-            }
-        },
-        {
-            "name": "search_case_studies",
-            "description": "Queries the knowledge base for specific client case studies, success stories, and metrics.",
-            "parameters": {
-                "type": "OBJECT",
-                "properties": {
-                    "query": {
-                        "type": "STRING",
-                        "description": "The search term or query relating to case studies."
-                    }
+                required=["query"]
+            )
+        ),
+        types.FunctionDeclaration(
+            name="search_case_studies",
+            description="Queries the knowledge base for specific client case studies, success stories, and metrics.",
+            parameters=types.Schema(
+                type=types.Type.OBJECT,
+                properties={
+                    "query": types.Schema(type=types.Type.STRING, description="The search term or query relating to case studies.")
                 },
-                "required": ["query"]
-            }
-        },
-        {
-            "name": "qualify_lead",
-            "description": "Qualifies a lead by setting their intent (buying, browsing, support) and priority (hot, warm, cold). Also updates lead status to qualified. Call this when intent is clear.",
-            "parameters": {
-                "type": "OBJECT",
-                "properties": {
-                    "lead_id": {
-                        "type": "INTEGER",
-                        "description": "The database ID of the lead to qualify."
-                    },
-                    "intent": {
-                        "type": "STRING",
-                        "description": "The intent of the lead. Must be one of: 'buying', 'browsing', 'support'."
-                    },
-                    "priority": {
-                        "type": "STRING",
-                        "description": "The priority of the lead. Must be one of: 'hot', 'warm', 'cold'."
-                    }
+                required=["query"]
+            )
+        ),
+        types.FunctionDeclaration(
+            name="qualify_lead",
+            description="Qualifies a lead by setting their intent (buying, browsing, support) and priority (hot, warm, cold). Also updates lead status to qualified. Call this when intent is clear.",
+            parameters=types.Schema(
+                type=types.Type.OBJECT,
+                properties={
+                    "lead_id": types.Schema(type=types.Type.INTEGER, description="The database ID of the lead to qualify."),
+                    "intent": types.Schema(type=types.Type.STRING, description="The intent of the lead. Must be one of: 'buying', 'browsing', 'support'."),
+                    "priority": types.Schema(type=types.Type.STRING, description="The priority of the lead. Must be one of: 'hot', 'warm', 'cold'.")
                 },
-                "required": ["lead_id", "intent", "priority"]
-            }
-        },
-        {
-            "name": "update_lead",
-            "description": "Updates an existing lead's fields as new information (such as name, email, business type, or service requested) is gathered during the conversation.",
-            "parameters": {
-                "type": "OBJECT",
-                "properties": {
-                    "lead_id": {
-                        "type": "INTEGER",
-                        "description": "The database ID of the lead to update."
-                    },
-                    "name": {
-                        "type": "STRING",
-                        "description": "The name of the lead."
-                    },
-                    "email": {
-                        "type": "STRING",
-                        "description": "The email address of the lead."
-                    },
-                    "phone": {
-                        "type": "STRING",
-                        "description": "The phone number of the lead."
-                    },
-                    "business_type": {
-                        "type": "STRING",
-                        "description": "The type of business (e.g. gym, e-commerce, real estate)."
-                    },
-                    "service_requested": {
-                        "type": "STRING",
-                        "description": "The service or package they are interested in."
-                    }
+                required=["lead_id", "intent", "priority"]
+            )
+        ),
+        types.FunctionDeclaration(
+            name="update_lead",
+            description="Updates an existing lead's fields as new information (such as name, email, business type, or service requested) is gathered during the conversation.",
+            parameters=types.Schema(
+                type=types.Type.OBJECT,
+                properties={
+                    "lead_id": types.Schema(type=types.Type.INTEGER, description="The database ID of the lead to update."),
+                    "name": types.Schema(type=types.Type.STRING, description="The name of the lead."),
+                    "email": types.Schema(type=types.Type.STRING, description="The email address of the lead."),
+                    "phone": types.Schema(type=types.Type.STRING, description="The phone number of the lead."),
+                    "business_type": types.Schema(type=types.Type.STRING, description="The type of business (e.g. gym, e-commerce, real estate)."),
+                    "service_requested": types.Schema(type=types.Type.STRING, description="The service or package they are interested in.")
                 },
-                "required": ["lead_id"]
-            }
-        }
-    ]
-}
+                required=["lead_id"]
+            )
+        )
+    ])
+]
+
 
 class AgentOrchestrator:
     def __init__(self):
-        genai.configure(api_key=settings.GEMINI_API_KEY)
-        self.model = genai.GenerativeModel(
-            model_name="models/gemini-3.5-flash-lite",
-            system_instruction=SYSTEM_INSTRUCTION
-        )
+        self.client = genai.Client(api_key=settings.GEMINI_API_KEY)
+        self.model_name = "gemini-3.5-flash-lite"
 
     def execute_tool(self, db: Session, lead_id: int, name: str, args: dict) -> str:
         """Executes the Python tool function, logs the call to ToolCallLog, and returns the result."""
-        # 1. Log the tool invocation
         log_entry = ToolCallLog(
             lead_id=lead_id,
             tool_name=name,
@@ -131,8 +93,7 @@ class AgentOrchestrator:
         db.refresh(log_entry)
 
         print(f"[Orchestrator] Executing tool '{name}' for lead {lead_id} with args: {args}")
-        
-        # 2. Match and execute the tool
+
         try:
             if name == "search_services":
                 result = tools.search_services(db, args.get("query", ""))
@@ -156,7 +117,6 @@ class AgentOrchestrator:
             result = f"Error executing tool '{name}': {e}"
             print(f"[Orchestrator] Error: {e}")
 
-        # 3. Update log entry with the result
         try:
             log_entry.result = {"output": result}
             db.commit()
@@ -166,69 +126,69 @@ class AgentOrchestrator:
         return result
 
     def generate_reply(self, db: Session, lead: Lead, message_history: list) -> str:
-        """Runs the main agent dialog loop, resolving tool calls recursively until a text reply is returned."""
-        # Convert internal message history to Gemini format
+        """Runs the main agent dialog loop, resolving tool calls until a text reply is returned."""
+        # Convert internal message history to google-genai Content format
         history = []
         for msg in message_history:
             role = "user" if msg["role"] == "user" else "model"
-            history.append({
-                "role": role,
-                "parts": [{"text": msg["content"]}]
-            })
+            history.append(types.Content(
+                role=role,
+                parts=[types.Part.from_text(text=msg["content"])]
+            ))
 
-        # Run recursion loop up to 5 steps to avoid infinite loops
+        config = types.GenerateContentConfig(
+            system_instruction=SYSTEM_INSTRUCTION,
+            tools=TOOLS,
+        )
+
+        # Run agentic loop up to 5 steps
         for step in range(5):
             try:
-                response = self.model.generate_content(
+                response = self.client.models.generate_content(
+                    model=self.model_name,
                     contents=history,
-                    tools=[DB_SEARCH_SERVICES_TOOL]
+                    config=config
                 )
             except Exception as e:
                 print(f"Error generating content: {e}")
                 return "I apologize, but I am currently unavailable. Please try again later."
 
-            # Check if Gemini decided to invoke any function calls
+            # Check for function calls in the response
             function_calls = []
-            if hasattr(response, "function_calls") and response.function_calls:
-                function_calls = response.function_calls
-            elif response.candidates and len(response.candidates) > 0:
-                parts = getattr(response.candidates[0].content, "parts", [])
-                for part in parts:
-                    fc = getattr(part, "function_call", None)
-                    if fc and getattr(fc, "name", None):
-                        function_calls.append(fc)
+            if response.candidates:
+                for part in response.candidates[0].content.parts:
+                    if part.function_call and part.function_call.name:
+                        function_calls.append(part.function_call)
 
             if function_calls:
-                # CRITICAL: append the raw model Content object (preserves thought_signature)
+                # Append the model's response (with function calls) to history
                 history.append(response.candidates[0].content)
 
                 # Execute all tools and build function response parts
                 function_response_parts = []
                 for fc in function_calls:
-                    # In case the model forgot lead_id, inject it automatically
-                    args = dict(fc.args)
-                    if "lead_id" in args:
-                        args["lead_id"] = lead.id
-                    elif fc.name in ["qualify_lead", "update_lead"]:
+                    args = dict(fc.args) if fc.args else {}
+                    # Always enforce the correct lead_id for lead-mutating tools
+                    if fc.name in ["qualify_lead", "update_lead"]:
                         args["lead_id"] = lead.id
 
                     tool_result = self.execute_tool(db, lead.id, fc.name, args)
                     function_response_parts.append(
-                        genai_protos.Part(
-                            function_response=genai_protos.FunctionResponse(
-                                name=fc.name,
-                                response={"result": tool_result}
-                            )
+                        types.Part.from_function_response(
+                            name=fc.name,
+                            response={"result": tool_result}
                         )
                     )
-                # Gemini requires function responses submitted with role 'user'
-                history.append(genai_protos.Content(role="user", parts=function_response_parts))
-                # Loop back to let Gemini compose a final text reply using tool results
+
+                # Append tool results as a user turn (Gemini convention)
+                history.append(types.Content(role="user", parts=function_response_parts))
                 continue
-            
-            # If no function calls, return the final text response
-            return response.text if response.text else "I am here to help you."
+
+            # No function calls — return the final text reply
+            if response.text:
+                return response.text
 
         return "I apologize, but I need to process this request further. Please contact our support team."
+
 
 orchestrator = AgentOrchestrator()
