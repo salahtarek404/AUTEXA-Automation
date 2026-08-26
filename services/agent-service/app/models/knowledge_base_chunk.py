@@ -19,7 +19,7 @@ class KnowledgeBaseChunk(Base):
     content = Column(Text, nullable=False)
     
     if HAS_PGVECTOR:
-        embedding = Column(Vector(768))  # Gemini text-embedding-004 is 768-dimensional
+        embedding = Column(Vector(3072))  # gemini-embedding-001 is 3072-dimensional
     else:
         # PickleType works on SQLite/PostgreSQL and serializes python list of floats
         embedding = Column(PickleType)
