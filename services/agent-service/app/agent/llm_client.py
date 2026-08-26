@@ -5,8 +5,7 @@ class GeminiClient:
     def __init__(self):
         # Configure Gemini API
         genai.configure(api_key=settings.GEMINI_API_KEY)
-        # Using Gemini 1.5 Flash as requested for Phase 1 free tier
-        self.model = genai.GenerativeModel("gemini-1.5-flash")
+        self.model = genai.GenerativeModel("gemini-3.5-flash")
 
     def generate_reply(self, messages: list) -> str:
         # Convert internal message format to Gemini's format if needed.
