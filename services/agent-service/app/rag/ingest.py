@@ -54,7 +54,8 @@ def main():
         db.commit()
         
         # Locate markdown files
-        kb_path = Path(__file__).resolve().parents[4] / "packages" / "knowledge-base"
+        # Allow KB path to be set via env var; default is /knowledge-base (Docker mount)
+        kb_path = Path(os.environ.get("KB_PATH", "/knowledge-base"))
         print(f"Scanning markdown files in: {kb_path}")
         md_files = glob.glob(str(kb_path / "*.md"))
         
