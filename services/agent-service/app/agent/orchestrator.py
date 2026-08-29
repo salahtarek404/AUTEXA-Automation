@@ -138,10 +138,13 @@ class AgentOrchestrator:
         print(f"[Orchestrator] Executing tool '{name}' for lead {lead_id} with args: {args}")
 
         try:
+            lead_obj = db.query(Lead).filter(Lead.id == lead_id).first()
+            tenant_id = lead_obj.tenant_id if lead_obj else "autexa"
+
             if name == "search_services":
-                result = tools.search_services(db, args.get("query", ""))
+                result = tools.search_services(db, args.get("query", ""), tenant_id=tenant_id)
             elif name == "search_case_studies":
-                result = tools.search_case_studies(db, args.get("query", ""))
+                result = tools.search_case_studies(db, args.get("query", ""), tenant_id=tenant_id)
             elif name == "qualify_lead":
                 result = tools.qualify_lead(db, lead_id, args.get("intent", ""), args.get("priority", ""))
             elif name == "update_lead":

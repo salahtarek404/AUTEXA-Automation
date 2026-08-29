@@ -6,6 +6,7 @@ class Lead(Base):
     __tablename__ = "leads"
 
     id = Column(Integer, primary_key=True, index=True)
+    tenant_id = Column(String, default="autexa", index=True, nullable=False)
     name = Column(String, index=True)
     phone = Column(String, nullable=True)
     instagram_handle = Column(String, nullable=True)

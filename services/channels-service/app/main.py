@@ -7,6 +7,7 @@ import os
 import pathlib
 
 from app.whatsapp import router as whatsapp_router
+from app.instagram import router as instagram_router
 
 app = FastAPI(title="Channels Service")
 
@@ -20,8 +21,9 @@ app.add_middleware(
 
 AGENT_SERVICE_URL = os.getenv("AGENT_SERVICE_URL", "http://localhost:8000")
 
-# Mount WhatsApp channel routes
+# Mount channel routes
 app.include_router(whatsapp_router)
+app.include_router(instagram_router)
 
 
 @app.post("/webhook/widget")

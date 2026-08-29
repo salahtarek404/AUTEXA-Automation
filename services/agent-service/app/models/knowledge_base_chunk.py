@@ -15,6 +15,7 @@ class KnowledgeBaseChunk(Base):
     __tablename__ = "knowledge_base_chunks"
 
     id = Column(Integer, primary_key=True, index=True)
+    tenant_id = Column(String, default="autexa", index=True, nullable=False)
     source_doc = Column(String, index=True)
     content = Column(Text, nullable=False)
     

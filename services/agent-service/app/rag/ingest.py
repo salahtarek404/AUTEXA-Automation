@@ -53,37 +53,53 @@ def main():
         db.query(KnowledgeBaseChunk).delete()
         db.commit()
         
-        # Locate markdown files
-        # Allow KB path to be set via env var; default is /knowledge-base (Docker mount)
+        # Locate markdown files per tenant folder
         kb_path = Path(os.environ.get("KB_PATH", "/knowledge-base"))
-        print(f"Scanning markdown files in: {kb_path}")
-        md_files = glob.glob(str(kb_path / "*.md"))
+        print(f"Scanning tenant directories in: {kb_path}")
         
-        if not md_files:
-            print("No markdown files found!")
-            return
+        # Get all subdirectories (each corresponds to a tenant_id)
+        tenant_dirs = []
+        if kb_path.exists():
+            tenant_dirs = [d for d in kb_path.iterdir() if d.is_dir()]
+        
+        if not tenant_dirs:
+            print("No tenant subdirectories found. Processing root directory as 'autexa'...")
+            tenant_dirs = [kb_path]
             
-        for file_path in md_files:
-            file_name = Path(file_path).name
-            print(f"Processing {file_name}...")
-            with open(file_path, 'r', encoding='utf-8') as f:
-                content = f.read()
+        for tenant_dir in tenant_dirs:
+            tenant_id = tenant_dir.name if tenant_dir != kb_path else "autexa"
+            if tenant_id.startswith(".") or tenant_id == "__pycache__":
+                continue
                 
-            chunks = chunk_markdown(content)
-            print(f"Generated {len(chunks)} chunks from {file_name}")
+            print(f"\nIngesting knowledge base for tenant: {tenant_id}...")
+            md_files = glob.glob(str(tenant_dir / "*.md"))
             
-            for i, chunk in enumerate(chunks):
-                print(f"  Embedding chunk {i+1}/{len(chunks)}...")
-                embedding = get_embedding(chunk)
-                kb_chunk = KnowledgeBaseChunk(
-                    source_doc=file_name,
-                    content=chunk,
-                    embedding=embedding
-                )
-                db.add(kb_chunk)
-            db.commit()
+            if not md_files:
+                print(f"No markdown files found for tenant: {tenant_id}")
+                continue
+                
+            for file_path in md_files:
+                file_name = Path(file_path).name
+                print(f"  Processing {file_name}...")
+                with open(file_path, 'r', encoding='utf-8') as f:
+                    content = f.read()
+                    
+                chunks = chunk_markdown(content)
+                print(f"  Generated {len(chunks)} chunks from {file_name}")
+                
+                for i, chunk in enumerate(chunks):
+                    print(f"    Embedding chunk {i+1}/{len(chunks)}...")
+                    embedding = get_embedding(chunk)
+                    kb_chunk = KnowledgeBaseChunk(
+                        tenant_id=tenant_id,
+                        source_doc=file_name,
+                        content=chunk,
+                        embedding=embedding
+                    )
+                    db.add(kb_chunk)
+                db.commit()
             
-        print("Ingestion completed successfully!")
+        print("\nIngestion completed successfully!")
     except Exception as e:
         print(f"Ingestion failed: {e}")
         db.rollback()

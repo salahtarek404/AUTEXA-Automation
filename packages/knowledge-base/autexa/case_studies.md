@@ -27,3 +27,4 @@ Read about how our clients have transformed their operations and increased conve
 - **Results**:
   - 100% of high-intent inquiries captured instantly.
   - Secured 3 major luxury property contracts within two months from off-hours leads.
+  - CSAT (Customer Satisfaction Score) rose to 4.9/5.0.

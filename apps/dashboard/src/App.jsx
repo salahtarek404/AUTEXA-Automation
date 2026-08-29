@@ -1,15 +1,20 @@
 import React, { useState } from 'react';
 import LeadsTable from './components/LeadsTable';
 import ProposalsView from './components/ProposalsView';
-import { LayoutDashboard, FileText } from 'lucide-react';
+import AnalyticsView from './components/AnalyticsView';
+import { LayoutDashboard, FileText, BarChart3 } from 'lucide-react';
+import { setTenantId } from './api/agentApi';
+
 
 const TABS = [
     { id: 'leads', label: 'Leads', icon: LayoutDashboard },
     { id: 'proposals', label: 'Proposals', icon: FileText },
+    { id: 'analytics', label: 'Analytics', icon: BarChart3 },
 ];
 
 function App() {
     const [activeTab, setActiveTab] = useState('leads');
+    const [activeTenant, setActiveTenant] = useState('autexa');
 
     return (
         <div className="min-h-screen bg-gray-50">
@@ -47,7 +52,21 @@ function App() {
                             </div>
                         </div>
 
-                        <div className="flex items-center">
+                        <div className="flex items-center gap-4">
+                            <select
+                                value={activeTenant}
+                                onChange={(e) => {
+                                    const val = e.target.value;
+                                    setActiveTenant(val);
+                                    setTenantId(val);
+                                }}
+                                className="bg-gray-50 border border-gray-200 text-gray-700 text-sm rounded-lg px-3 py-1.5 focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 focus:outline-none cursor-pointer font-medium"
+                            >
+                                <option value="autexa">Autexa (Tenant Zero)</option>
+                                <option value="restaurant">Restaurant Sandbox</option>
+                                <option value="real_estate">Real Estate Sandbox</option>
+                                <option value="ecommerce">E-commerce Sandbox</option>
+                            </select>
                             <span className="text-sm font-medium text-gray-700">Admin</span>
                         </div>
                     </div>
@@ -70,10 +89,19 @@ function App() {
                             </p>
                         </>
                     )}
+                    {activeTab === 'analytics' && (
+                        <>
+                            <h1 className="text-2xl font-bold text-gray-900">Analytics</h1>
+                            <p className="mt-1 text-sm text-gray-500">
+                                Real-time conversion rates, average response times, and channel metrics.
+                            </p>
+                        </>
+                    )}
                 </div>
 
-                {activeTab === 'leads' && <LeadsTable />}
-                {activeTab === 'proposals' && <ProposalsView />}
+                {activeTab === 'leads' && <LeadsTable key={activeTenant} />}
+                {activeTab === 'proposals' && <ProposalsView key={activeTenant} />}
+                {activeTab === 'analytics' && <AnalyticsView key={activeTenant} />}
             </main>
         </div>
     );

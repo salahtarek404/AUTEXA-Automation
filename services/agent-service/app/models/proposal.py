@@ -7,6 +7,7 @@ class Proposal(Base):
     __tablename__ = "proposals"
 
     id = Column(Integer, primary_key=True, index=True)
+    tenant_id = Column(String, default="autexa", index=True, nullable=False)
     lead_id = Column(Integer, ForeignKey("leads.id"), nullable=False, index=True)
     service_scope = Column(Text, nullable=False)
     estimated_price = Column(String, nullable=False)

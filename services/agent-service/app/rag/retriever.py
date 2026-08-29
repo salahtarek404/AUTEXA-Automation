@@ -3,9 +3,9 @@ from app.models.knowledge_base_chunk import KnowledgeBaseChunk, HAS_PGVECTOR
 from app.rag.embeddings import get_query_embedding
 import numpy as np
 
-def retrieve_chunks(db: Session, query: str, limit: int = 3, filter_source: str = None) -> list[KnowledgeBaseChunk]:
+def retrieve_chunks(db: Session, query: str, limit: int = 3, filter_source: str = None, tenant_id: str = "autexa") -> list[KnowledgeBaseChunk]:
     """
-    Retrieves the most similar knowledge base chunks for a given query.
+    Retrieves the most similar knowledge base chunks for a given query, scoped by tenant.
     If pgvector is installed and enabled, it executes similarity search on the database.
     Otherwise, it fetches and computes cosine similarity in Python as a fallback.
     """
@@ -15,7 +15,7 @@ def retrieve_chunks(db: Session, query: str, limit: int = 3, filter_source: str 
         print(f"Failed to generate query embedding: {e}")
         return []
 
-    stmt = db.query(KnowledgeBaseChunk)
+    stmt = db.query(KnowledgeBaseChunk).filter(KnowledgeBaseChunk.tenant_id == tenant_id)
     if filter_source:
         stmt = stmt.filter(KnowledgeBaseChunk.source_doc == filter_source)
 
