@@ -8,6 +8,8 @@ from sqlalchemy.orm import Session
 from app.models.lead import Lead
 from app.models.followup import Followup
 from app.models.proposal import Proposal
+from app.models.conversation import Conversation
+from app.models.tool_call_log import ToolCallLog
 from app.rag.retriever import retrieve_chunks
 
 # ---------------------------------------------------------------------------
@@ -90,9 +92,66 @@ def update_lead(
     if not lead:
         return json.dumps({"status": "error", "message": f"Lead with ID {lead_id} not found."})
 
+    # Search for an existing duplicate lead (excluding the current lead itself)
+    existing_lead = None
+    if email and email.strip():
+        existing_lead = db.query(Lead).filter(Lead.email == email.strip(), Lead.id != lead_id).first()
+    if not existing_lead and phone and phone.strip():
+        existing_lead = db.query(Lead).filter(Lead.phone == phone.strip(), Lead.id != lead_id).first()
+
+    if existing_lead:
+        # MERGE LOGIC: Merge current lead into existing_lead
+        print(f"[Tools] Merging lead {lead_id} into existing lead {existing_lead.id}")
+        
+        # 1. Update properties on existing lead if they are not set
+        if (not existing_lead.name or existing_lead.name == "Guest") and name:
+            existing_lead.name = name
+        elif (not existing_lead.name or existing_lead.name == "Guest") and lead.name and lead.name != "Guest":
+            existing_lead.name = lead.name
+            
+        if not existing_lead.email and (email or lead.email):
+            existing_lead.email = (email or lead.email).strip()
+        if not existing_lead.phone and (phone or lead.phone):
+            existing_lead.phone = (phone or lead.phone).strip()
+        if not existing_lead.business_type and (business_type or lead.business_type):
+            existing_lead.business_type = business_type or lead.business_type
+        if not existing_lead.service_requested and (service_requested or lead.service_requested):
+            existing_lead.service_requested = service_requested or lead.service_requested
+        if not existing_lead.intent and lead.intent:
+            existing_lead.intent = lead.intent
+        if not existing_lead.priority and lead.priority:
+            existing_lead.priority = lead.priority
+        if not existing_lead.instagram_handle and lead.instagram_handle:
+            existing_lead.instagram_handle = lead.instagram_handle
+
+        # 2. Update child records to point to the existing lead
+        db.query(Conversation).filter(Conversation.lead_id == lead_id).update({"lead_id": existing_lead.id})
+        db.query(Proposal).filter(Proposal.lead_id == lead_id).update({"lead_id": existing_lead.id})
+        db.query(Followup).filter(Followup.lead_id == lead_id).update({"lead_id": existing_lead.id})
+        db.query(ToolCallLog).filter(ToolCallLog.lead_id == lead_id).update({"lead_id": existing_lead.id})
+
+        # 3. Delete the temporary/current duplicate lead
+        db.delete(lead)
+        db.commit()
+        db.refresh(existing_lead)
+
+        return json.dumps({
+            "status": "success",
+            "message": f"Lead {lead_id} merged into existing lead {existing_lead.id}.",
+            "lead": {
+                "id": existing_lead.id,
+                "name": existing_lead.name,
+                "email": existing_lead.email,
+                "phone": existing_lead.phone,
+                "business_type": existing_lead.business_type,
+                "service_requested": existing_lead.service_requested,
+            },
+        })
+
+    # Normal update if no duplicate is found
     if name:             lead.name = name
-    if email:            lead.email = email
-    if phone:            lead.phone = phone
+    if email:            lead.email = email.strip() if email else None
+    if phone:            lead.phone = phone.strip() if phone else None
     if business_type:    lead.business_type = business_type
     if service_requested: lead.service_requested = service_requested
 
@@ -113,11 +172,12 @@ def update_lead(
     })
 
 
-def search_services(db: Session, query: str) -> str:
-    chunks = retrieve_chunks(db, query, limit=3)
+
+def search_services(db: Session, query: str, tenant_id: str = "autexa") -> str:
+    chunks = retrieve_chunks(db, query, limit=3, tenant_id=tenant_id)
     filtered_chunks = [c for c in chunks if c.source_doc != "case_studies.md"]
     if not filtered_chunks:
-        filtered_chunks = retrieve_chunks(db, query, limit=2, filter_source="services.md")
+        filtered_chunks = retrieve_chunks(db, query, limit=2, filter_source="services.md", tenant_id=tenant_id)
 
     results = []
     for chunk in filtered_chunks:
@@ -126,8 +186,8 @@ def search_services(db: Session, query: str) -> str:
     return "\n\n".join(results) if results else "No relevant service details found."
 
 
-def search_case_studies(db: Session, query: str) -> str:
-    chunks = retrieve_chunks(db, query, limit=2, filter_source="case_studies.md")
+def search_case_studies(db: Session, query: str, tenant_id: str = "autexa") -> str:
+    chunks = retrieve_chunks(db, query, limit=2, filter_source="case_studies.md", tenant_id=tenant_id)
     results = []
     for chunk in chunks:
         results.append(f"Source: {chunk.source_doc}\nContent:\n{chunk.content}\n---")
