@@ -1,0 +1,141 @@
+{
+    "name": "Autexa Hot Lead Notification",
+    "nodes": [
+        {
+            "parameters": {
+                "httpMethod": "POST",
+                "path": "hot-lead",
+                "responseMode": "responseNode",
+                "options": {}
+            },
+            "id": "webhook-trigger",
+            "name": "Webhook Trigger",
+            "type": "n8n-nodes-base.webhook",
+            "typeVersion": 1,
+            "position": [
+                240,
+                300
+            ]
+        },
+        {
+            "parameters": {
+                "assignments": {
+                    "assignments": [
+                        {
+                            "id": "lead_id",
+                            "name": "lead_id",
+                            "value": "={{ $json.lead_id }}",
+                            "type": "number"
+                        },
+                        {
+                            "id": "slack_message",
+                            "name": "slack_message",
+                            "value": "=🔥 *HOT LEAD ALERT!*\n\n👤 *Name:* {{ $json.name || 'Unknown' }}\n📧 *Email:* {{ $json.email || 'Not provided' }}\n📞 *Phone:* {{ $json.phone || 'Not provided' }}\n🏢 *Business:* {{ $json.business_type || 'Not specified' }}\n🎯 *Service:* {{ $json.service_requested || 'General inquiry' }}\n📌 *Intent:* {{ $json.intent }}\n🌡️ *Priority:* {{ $json.priority }}\n📣 *Source:* {{ $json.source }}\n\n_Action required: Check the Autexa dashboard and follow up within the hour._",
+                            "type": "string"
+                        }
+                    ]
+                },
+                "options": {}
+            },
+            "id": "format-message",
+            "name": "Format Alert Message",
+            "type": "n8n-nodes-base.set",
+            "typeVersion": 3,
+            "position": [
+                460,
+                300
+            ]
+        },
+        {
+            "parameters": {
+                "url": "={{ $env.SLACK_WEBHOOK_URL }}",
+                "sendHeaders": true,
+                "headerParameters": {
+                    "parameters": [
+                        {
+                            "name": "Content-Type",
+                            "value": "application/json"
+                        }
+                    ]
+                },
+                "sendBody": true,
+                "bodyParameters": {
+                    "parameters": [
+                        {
+                            "name": "text",
+                            "value": "={{ $json.slack_message }}"
+                        }
+                    ]
+                },
+                "options": {}
+            },
+            "id": "send-slack",
+            "name": "Send Slack Alert",
+            "type": "n8n-nodes-base.httpRequest",
+            "typeVersion": 4,
+            "position": [
+                680,
+                300
+            ]
+        },
+        {
+            "parameters": {
+                "respondWith": "json",
+                "responseBody": "={ \"status\": \"ok\", \"message\": \"Notification sent\" }",
+                "options": {}
+            },
+            "id": "respond",
+            "name": "Respond to Webhook",
+            "type": "n8n-nodes-base.respondToWebhook",
+            "typeVersion": 1,
+            "position": [
+                900,
+                300
+            ]
+        }
+    ],
+    "connections": {
+        "Webhook Trigger": {
+            "main": [
+                [
+                    {
+                        "node": "Format Alert Message",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "Format Alert Message": {
+            "main": [
+                [
+                    {
+                        "node": "Send Slack Alert",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "Send Slack Alert": {
+            "main": [
+                [
+                    {
+                        "node": "Respond to Webhook",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        }
+    },
+    "active": true,
+    "settings": {
+        "executionOrder": "v1"
+    },
+    "tags": [
+        "autexa",
+        "hot-lead",
+        "phase-3"
+    ]
+}
