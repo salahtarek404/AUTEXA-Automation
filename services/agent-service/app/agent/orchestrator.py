@@ -15,19 +15,23 @@ Rules:
 2. Use the `search_services` tool to look up service details, subscription tiers, and FAQs.
 3. Use the `search_case_studies` tool to look up case study metrics.
 4. When you learn new information about a lead (like their name, email, business type, or service requested), update the lead using `update_lead`.
-5. Once you understand their intent (buying, browsing, support) and priority (hot, warm, cold) (usually by the 2nd or 3rd turn), call the `qualify_lead` tool.
+5. Once you understand their intent (buying, browsing, support) and priority (hot, warm, cold) — usually by the 2nd or 3rd turn — call the `qualify_lead` tool.
 6. If you cannot find the answer in the retrieved documents, politely explain that you don't have that information and ask for their email/phone so a human can follow up.
+7. If the lead has gone quiet or conversation stalled (no new intent), call `schedule_followup` to set a reminder in 48 hours. Do not call it more than once per conversation.
+8. When a lead is qualified as `hot` with intent `buying` AND you have their name and the service they want, call `generate_proposal` to create a draft. NEVER tell the customer the proposal has been sent — it is a draft awaiting human approval.
+9. `notify_sales_team` is called automatically when `qualify_lead` resolves with priority=hot. You may also call it independently if urgent human escalation is needed.
 """
 
 TOOLS = [
     types.Tool(function_declarations=[
+        # --- Phase 2 tools ---
         types.FunctionDeclaration(
             name="search_services",
             description="Queries the knowledge base for details about Autexa's services, packages, pricing, subscription options, and FAQs. Frame pricing as rough estimates.",
             parameters=types.Schema(
                 type=types.Type.OBJECT,
                 properties={
-                    "query": types.Schema(type=types.Type.STRING, description="The search term or query relating to services, packages, pricing, and FAQs.")
+                    "query": types.Schema(type=types.Type.STRING, description="Search term relating to services, packages, pricing, or FAQs.")
                 },
                 required=["query"]
             )
@@ -38,42 +42,81 @@ TOOLS = [
             parameters=types.Schema(
                 type=types.Type.OBJECT,
                 properties={
-                    "query": types.Schema(type=types.Type.STRING, description="The search term or query relating to case studies.")
+                    "query": types.Schema(type=types.Type.STRING, description="Search term relating to case studies.")
                 },
                 required=["query"]
             )
         ),
         types.FunctionDeclaration(
             name="qualify_lead",
-            description="Qualifies a lead by setting their intent (buying, browsing, support) and priority (hot, warm, cold). Also updates lead status to qualified. Call this when intent is clear.",
+            description="Qualifies a lead by setting their intent (buying, browsing, support) and priority (hot, warm, cold). Also updates lead status to 'qualified'. Automatically notifies the sales team if priority is 'hot'.",
             parameters=types.Schema(
                 type=types.Type.OBJECT,
                 properties={
-                    "lead_id": types.Schema(type=types.Type.INTEGER, description="The database ID of the lead to qualify."),
-                    "intent": types.Schema(type=types.Type.STRING, description="The intent of the lead. Must be one of: 'buying', 'browsing', 'support'."),
-                    "priority": types.Schema(type=types.Type.STRING, description="The priority of the lead. Must be one of: 'hot', 'warm', 'cold'.")
+                    "lead_id": types.Schema(type=types.Type.INTEGER, description="The database ID of the lead."),
+                    "intent": types.Schema(type=types.Type.STRING, description="Lead intent. One of: 'buying', 'browsing', 'support'."),
+                    "priority": types.Schema(type=types.Type.STRING, description="Lead priority. One of: 'hot', 'warm', 'cold'.")
                 },
                 required=["lead_id", "intent", "priority"]
             )
         ),
         types.FunctionDeclaration(
             name="update_lead",
-            description="Updates an existing lead's fields as new information (such as name, email, business type, or service requested) is gathered during the conversation.",
+            description="Updates a lead's fields (name, email, phone, business_type, service_requested) as new information is gathered.",
             parameters=types.Schema(
                 type=types.Type.OBJECT,
                 properties={
-                    "lead_id": types.Schema(type=types.Type.INTEGER, description="The database ID of the lead to update."),
-                    "name": types.Schema(type=types.Type.STRING, description="The name of the lead."),
-                    "email": types.Schema(type=types.Type.STRING, description="The email address of the lead."),
-                    "phone": types.Schema(type=types.Type.STRING, description="The phone number of the lead."),
-                    "business_type": types.Schema(type=types.Type.STRING, description="The type of business (e.g. gym, e-commerce, real estate)."),
+                    "lead_id": types.Schema(type=types.Type.INTEGER, description="The database ID of the lead."),
+                    "name": types.Schema(type=types.Type.STRING, description="The lead's name."),
+                    "email": types.Schema(type=types.Type.STRING, description="The lead's email address."),
+                    "phone": types.Schema(type=types.Type.STRING, description="The lead's phone number."),
+                    "business_type": types.Schema(type=types.Type.STRING, description="Type of business (e.g. gym, e-commerce, real estate)."),
                     "service_requested": types.Schema(type=types.Type.STRING, description="The service or package they are interested in.")
                 },
                 required=["lead_id"]
             )
-        )
+        ),
+        # --- Phase 3 tools ---
+        types.FunctionDeclaration(
+            name="schedule_followup",
+            description="Schedules an automated follow-up message to be sent to the lead after a delay. Use when the conversation has stalled or the lead has gone quiet. Do not call more than once per conversation.",
+            parameters=types.Schema(
+                type=types.Type.OBJECT,
+                properties={
+                    "lead_id": types.Schema(type=types.Type.INTEGER, description="The database ID of the lead."),
+                    "hours_from_now": types.Schema(type=types.Type.NUMBER, description="How many hours from now to send the follow-up. Default is 48."),
+                    "message_type": types.Schema(type=types.Type.STRING, description="Type of follow-up. One of: 'auto_message', 'reminder'. Default is 'auto_message'.")
+                },
+                required=["lead_id"]
+            )
+        ),
+        types.FunctionDeclaration(
+            name="notify_sales_team",
+            description="Fires an alert to the human sales team via n8n (Slack/email). Called automatically for hot leads. Only call this manually if urgent human escalation is required for a non-hot lead.",
+            parameters=types.Schema(
+                type=types.Type.OBJECT,
+                properties={
+                    "lead_id": types.Schema(type=types.Type.INTEGER, description="The database ID of the lead to escalate.")
+                },
+                required=["lead_id"]
+            )
+        ),
+        types.FunctionDeclaration(
+            name="generate_proposal",
+            description="Creates a draft proposal for a qualified hot/buying lead based on pricing.md estimates. Status is 'draft' — it requires human approval in the dashboard before being sent. NEVER tell the customer it has been sent.",
+            parameters=types.Schema(
+                type=types.Type.OBJECT,
+                properties={
+                    "lead_id": types.Schema(type=types.Type.INTEGER, description="The database ID of the qualified lead.")
+                },
+                required=["lead_id"]
+            )
+        ),
     ])
 ]
+
+# Tools the LLM is allowed to call (lead_id is always overridden server-side)
+LEAD_SCOPED_TOOLS = {"qualify_lead", "update_lead", "schedule_followup", "notify_sales_team", "generate_proposal"}
 
 
 class AgentOrchestrator:
@@ -111,6 +154,17 @@ class AgentOrchestrator:
                     business_type=args.get("business_type"),
                     service_requested=args.get("service_requested")
                 )
+            elif name == "schedule_followup":
+                result = tools.schedule_followup(
+                    db,
+                    lead_id=lead_id,
+                    hours_from_now=args.get("hours_from_now", 48.0),
+                    message_type=args.get("message_type", "auto_message")
+                )
+            elif name == "notify_sales_team":
+                result = tools.notify_sales_team(db, lead_id=lead_id)
+            elif name == "generate_proposal":
+                result = tools.generate_proposal(db, lead_id=lead_id)
             else:
                 result = f"Error: Tool '{name}' is not supported."
         except Exception as e:
@@ -127,7 +181,6 @@ class AgentOrchestrator:
 
     def generate_reply(self, db: Session, lead: Lead, message_history: list) -> str:
         """Runs the main agent dialog loop, resolving tool calls until a text reply is returned."""
-        # Convert internal message history to google-genai Content format
         history = []
         for msg in message_history:
             role = "user" if msg["role"] == "user" else "model"
@@ -141,8 +194,8 @@ class AgentOrchestrator:
             tools=TOOLS,
         )
 
-        # Run agentic loop up to 5 steps
-        for step in range(5):
+        # Run agentic loop up to 8 steps (6 tools may require more resolution steps)
+        for step in range(8):
             try:
                 response = self.client.models.generate_content(
                     model=self.model_name,
@@ -161,15 +214,13 @@ class AgentOrchestrator:
                         function_calls.append(part.function_call)
 
             if function_calls:
-                # Append the model's response (with function calls) to history
                 history.append(response.candidates[0].content)
 
-                # Execute all tools and build function response parts
                 function_response_parts = []
                 for fc in function_calls:
                     args = dict(fc.args) if fc.args else {}
-                    # Always enforce the correct lead_id for lead-mutating tools
-                    if fc.name in ["qualify_lead", "update_lead"]:
+                    # Enforce correct lead_id server-side — LLM cannot spoof it
+                    if fc.name in LEAD_SCOPED_TOOLS:
                         args["lead_id"] = lead.id
 
                     tool_result = self.execute_tool(db, lead.id, fc.name, args)
@@ -180,7 +231,6 @@ class AgentOrchestrator:
                         )
                     )
 
-                # Append tool results as a user turn (Gemini convention)
                 history.append(types.Content(role="user", parts=function_response_parts))
                 continue
 
