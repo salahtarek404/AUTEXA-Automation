@@ -103,15 +103,79 @@ def chat_endpoint(request: ChatRequest, db: Session = Depends(get_db)):
     # Determine the tenant from request body or fallback
     tenant_id = request.tenant_id or "autexa"
 
-    # Channel-aware lead query (scoped by tenant)
+    # ------------------------------------------------------------------
+    # Cross-channel identity resolution (Phase 4 merge policy)
+    # Step 1: Try exact channel-specific lookup.
+    # Step 2: If not found, try exact phone/email match across channels
+    #         for the same tenant — strong signal = same person.
+    # Step 3: If still not found, create a new lead.
+    # Rule: ONLY exact phone or email matches trigger a merge.
+    #       No fuzzy / name-based matching.
+    # ------------------------------------------------------------------
     lead = None
-    if request.channel == "whatsapp":
-        lead = db.query(Lead).filter(Lead.phone == request.sender_id, Lead.tenant_id == tenant_id).first()
-    elif request.channel == "instagram":
-        lead = db.query(Lead).filter(Lead.instagram_handle == request.sender_id, Lead.tenant_id == tenant_id).first()
-    else:
-        lead = db.query(Lead).filter(Lead.phone == request.sender_id, Lead.tenant_id == tenant_id).first()
 
+    if request.channel == "whatsapp":
+        lead = db.query(Lead).filter(
+            Lead.phone == request.sender_id,
+            Lead.tenant_id == tenant_id
+        ).first()
+    elif request.channel == "instagram":
+        lead = db.query(Lead).filter(
+            Lead.instagram_handle == request.sender_id,
+            Lead.tenant_id == tenant_id
+        ).first()
+    else:
+        # website widget — sender_id is treated as phone
+        lead = db.query(Lead).filter(
+            Lead.phone == request.sender_id,
+            Lead.tenant_id == tenant_id
+        ).first()
+
+    # Step 2: cross-channel merge — only when sender_id looks like a
+    # phone number (WhatsApp) or we have an explicit email in the payload.
+    if not lead:
+        cross_channel_lead = None
+        if request.channel == "instagram" and request.sender_id:
+            # Instagram gives us a numeric PSID, not a phone — can't match on its own.
+            # Only merge if caller supplied a phone/email hint in the payload.
+            if request.phone:
+                cross_channel_lead = db.query(Lead).filter(
+                    Lead.phone == request.phone,
+                    Lead.tenant_id == tenant_id
+                ).first()
+            elif request.email:
+                cross_channel_lead = db.query(Lead).filter(
+                    Lead.email == request.email,
+                    Lead.tenant_id == tenant_id
+                ).first()
+        elif request.channel == "whatsapp":
+            # phone is the sender_id on WhatsApp — check if an Instagram lead
+            # already has this phone stored from a previous enrichment.
+            cross_channel_lead = db.query(Lead).filter(
+                Lead.phone == request.sender_id,
+                Lead.tenant_id == tenant_id
+            ).first()
+            if not cross_channel_lead and request.email:
+                cross_channel_lead = db.query(Lead).filter(
+                    Lead.email == request.email,
+                    Lead.tenant_id == tenant_id
+                ).first()
+
+        if cross_channel_lead:
+            # Merge: patch any missing channel identifier onto the existing lead
+            lead = cross_channel_lead
+            if request.channel == "instagram" and not lead.instagram_handle:
+                lead.instagram_handle = request.sender_id
+                db.commit()
+                db.refresh(lead)
+            elif request.channel == "whatsapp" and not lead.phone:
+                lead.phone = request.sender_id
+                db.commit()
+                db.refresh(lead)
+            print(f"[chat] Cross-channel merge: sender={request.sender_id} "
+                  f"channel={request.channel} → lead_id={lead.id}")
+
+    # Step 3: no match at all — create fresh lead
     if not lead:
         if request.channel == "whatsapp":
             lead = Lead(name="Guest", phone=request.sender_id, source=request.channel, tenant_id=tenant_id)
